@@ -136,67 +136,78 @@ function playStation(stationKey) {
   }
 }
 
-// Helper: Join voice channel
-async function connectToVoiceChannel(channel) {
-  if (currentConnection && currentChannelId === channel.id) {
+// Helper: Join voice channel with retry logic for network stability
+async function connectToVoiceChannel(channel, retries = 3, delay = 2000) {
+  if (currentConnection && currentChannelId === channel.id && currentConnection.state?.status === VoiceConnectionStatus.Ready) {
     return currentConnection;
   }
 
-  if (currentConnection) {
-    currentConnection.destroy();
-    currentConnection = null;
-  }
-
-  currentConnection = joinVoiceChannel({
-    channelId: channel.id,
-    guildId: channel.guild.id,
-    adapterCreator: channel.guild.voiceAdapterCreator,
-    selfDeaf: false
-  });
-
-  currentChannelId = channel.id;
-
-  currentConnection.on('stateChange', (oldState, newState) => {
-    console.log(`[Voice Connection] Connection state changed from ${oldState.status} to ${newState.status}`);
-  });
-
-  currentConnection.on('debug', msg => {
-    console.log(`[Voice Debug] ${msg}`);
-  });
-
-  currentConnection.on(VoiceConnectionStatus.Disconnected, async () => {
-    console.warn(`Voice connection disconnected from channel ${channel.id}. Attempting reconnect...`);
+  for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      await Promise.race([
-        entersState(currentConnection, VoiceConnectionStatus.Signalling, 5000),
-        entersState(currentConnection, VoiceConnectionStatus.Connecting, 5000),
-      ]);
-    } catch (e) {
-      console.error('Failed to reconnect voice connection. Cleaning up connection state.');
       if (currentConnection) {
-        currentConnection.destroy();
+        try { currentConnection.destroy(); } catch (e) {}
+        currentConnection = null;
+      }
+
+      console.log(`[Voice Connection] Attempt ${attempt}/${retries} to connect to channel: ${channel.name} (${channel.id})`);
+
+      currentConnection = joinVoiceChannel({
+        channelId: channel.id,
+        guildId: channel.guild.id,
+        adapterCreator: channel.guild.voiceAdapterCreator,
+        selfDeaf: false
+      });
+
+      currentChannelId = channel.id;
+
+      currentConnection.on('stateChange', (oldState, newState) => {
+        console.log(`[Voice Connection] Connection state changed from ${oldState.status} to ${newState.status}`);
+      });
+
+      currentConnection.on('debug', msg => {
+        console.log(`[Voice Debug] ${msg}`);
+      });
+
+      currentConnection.on(VoiceConnectionStatus.Disconnected, async () => {
+        console.warn(`Voice connection disconnected from channel ${channel.id}. Attempting reconnect...`);
+        try {
+          await Promise.race([
+            entersState(currentConnection, VoiceConnectionStatus.Signalling, 5000),
+            entersState(currentConnection, VoiceConnectionStatus.Connecting, 5000),
+          ]);
+        } catch (e) {
+          console.error('Failed to reconnect voice connection. Cleaning up connection state.');
+          if (currentConnection) {
+            try { currentConnection.destroy(); } catch (err) {}
+            currentConnection = null;
+            currentChannelId = null;
+          }
+        }
+      });
+
+      console.log(`[Voice Connection] Waiting for connection to reach Ready state (attempt ${attempt})...`);
+      await entersState(currentConnection, VoiceConnectionStatus.Ready, 15_000);
+      console.log(`[Voice Connection] Connection successfully reached READY state on attempt ${attempt}!`);
+      currentConnection.subscribe(player);
+      return currentConnection;
+
+    } catch (error) {
+      console.warn(`[Voice Connection Warning] Attempt ${attempt}/${retries} failed to reach Ready state: ${error.message || error}`);
+      if (currentConnection) {
+        try { currentConnection.destroy(); } catch (e) {}
         currentConnection = null;
         currentChannelId = null;
       }
-    }
-  });
 
-  try {
-    console.log('[Voice Connection] Waiting for connection to reach Ready state...');
-    await entersState(currentConnection, VoiceConnectionStatus.Ready, 30_000);
-    console.log('[Voice Connection] Connection is READY!');
-    currentConnection.subscribe(player);
-  } catch (error) {
-    console.error('[Voice Connection Error] Connection failed to reach Ready state:', error);
-    if (currentConnection) {
-      currentConnection.destroy();
-      currentConnection = null;
-      currentChannelId = null;
+      if (attempt < retries) {
+        console.log(`[Voice Connection] Retrying connection in ${delay / 1000}s...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        console.error(`[Voice Connection Error] All ${retries} connection attempts failed.`);
+        throw error;
+      }
     }
-    throw error;
   }
-
-  return currentConnection;
 }
 
 // Player status monitoring
