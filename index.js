@@ -53,6 +53,17 @@ let currentChannelId = null;
 let reconnectTimer = null;
 let activeFfmpegProcess = null;
 
+const http = require('http');
+const PORT = process.env.PORT || 10000;
+
+// Health-check HTTP server to satisfy Render port detection
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Tamil Radio Discord Bot is running online!\n');
+}).listen(PORT, () => {
+  console.log(`🌐 Health check server listening on port ${PORT}`);
+});
+
 // Helper: Play a station by key
 function playStation(stationKey) {
   const station = config.stations[stationKey] || config.stations[config.defaultStation];
@@ -75,14 +86,22 @@ function playStation(stationKey) {
       '-reconnect', '1',
       '-reconnect_streamed', '1',
       '-reconnect_delay_max', '5',
+      '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       '-i', station.url,
       '-f', 's16le',
       '-ar', '48000',
       '-ac', '2',
       'pipe:1'
-    ], { stdio: ['ignore', 'pipe', 'ignore'] });
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
     activeFfmpegProcess = ffmpegProcess;
+
+    ffmpegProcess.stderr.on('data', data => {
+      const msg = data.toString().trim();
+      if (msg.includes('Error') || msg.includes('failed') || msg.includes('HTTP error')) {
+        console.error(`[FFmpeg Error]: ${msg}`);
+      }
+    });
 
     ffmpegProcess.on('error', err => {
       console.error(`FFmpeg process error for station [${stationKey}]:`, err.message);
@@ -276,7 +295,14 @@ client.on('interactionCreate', async interaction => {
         });
       }
 
-      await interaction.deferReply();
+      try {
+        if (!interaction.deferred && !interaction.replied) {
+          await interaction.deferReply();
+        }
+      } catch (e) {
+        console.warn('[Interaction Warning] Could not defer reply:', e.message);
+      }
+
       await connectToVoiceChannel(targetChannel);
       playStation(stationArg);
 
@@ -291,7 +317,11 @@ client.on('interactionCreate', async interaction => {
         .setFooter({ text: 'Tamil Radio Bot • 24/7 Live Stream' })
         .setTimestamp();
 
-      return interaction.editReply({ embeds: [embed] });
+      if (interaction.deferred || interaction.replied) {
+        return interaction.editReply({ embeds: [embed] });
+      } else {
+        return interaction.reply({ embeds: [embed] });
+      }
     }
 
     // /stop command
