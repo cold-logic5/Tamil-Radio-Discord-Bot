@@ -100,11 +100,15 @@ function playStation(stationKey) {
         '-reconnect_delay_max', '5',
         '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         '-i', station.url,
-        '-analyzeduration', '0',
-        '-loglevel', '0',
-        '-f', 's16le',
+        '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
+        '-c:a', 'libopus',
+        '-b:a', '128k',
+        '-vbr', 'on',
+        '-compression_level', '10',
+        '-application', 'audio',
         '-ar', '48000',
-        '-ac', '2'
+        '-ac', '2',
+        '-f', 'ogg'
       ]
     });
 
@@ -115,7 +119,7 @@ function playStation(stationKey) {
     });
 
     const resource = createAudioResource(ffmpegStream, {
-      inputType: StreamType.Raw,
+      inputType: StreamType.OggOpus,
       metadata: {
         title: station.name,
         key: stationKey
