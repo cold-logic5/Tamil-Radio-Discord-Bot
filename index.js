@@ -82,11 +82,15 @@ function playStation(stationKey) {
 
   try {
     // Spawn FFmpeg to convert MP3/AAC/HLS stream into 48kHz 16-bit stereo PCM audio
-    const ffmpegProcess = spawn(ffmpeg, [
+    const ffmpegExecutable = ffmpeg || 'ffmpeg';
+    console.log(`[FFmpeg] Spawning ${ffmpegExecutable} for station [${stationKey}]: ${station.url}`);
+
+    const ffmpegProcess = spawn(ffmpegExecutable, [
       '-reconnect', '1',
+      '-reconnect_at_eof', '1',
       '-reconnect_streamed', '1',
       '-reconnect_delay_max', '5',
-      '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      '-headers', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n',
       '-i', station.url,
       '-f', 's16le',
       '-ar', '48000',
@@ -97,10 +101,11 @@ function playStation(stationKey) {
     activeFfmpegProcess = ffmpegProcess;
 
     ffmpegProcess.stderr.on('data', data => {
-      const msg = data.toString().trim();
-      if (msg.includes('Error') || msg.includes('failed') || msg.includes('HTTP error')) {
-        console.error(`[FFmpeg Error]: ${msg}`);
-      }
+      console.log(`[FFmpeg Log]: ${data.toString().trim()}`);
+    });
+
+    ffmpegProcess.on('close', code => {
+      console.log(`[FFmpeg Process Exited]: Exit code ${code} for station [${stationKey}]`);
     });
 
     ffmpegProcess.on('error', err => {
