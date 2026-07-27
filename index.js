@@ -82,20 +82,22 @@ function playStation(stationKey) {
   }
 
   try {
-    // Spawn FFmpeg to convert MP3/AAC/HLS stream into 48kHz 16-bit stereo PCM audio
+    // Spawn FFmpeg to transcode live HTTP stream directly to Ogg Opus audio
     const ffmpegExecutable = ffmpeg || 'ffmpeg';
-    console.log(`[FFmpeg] Spawning ${ffmpegExecutable} for station [${stationKey}]: ${station.url}`);
+    console.log(`[FFmpeg] Spawning ${ffmpegExecutable} (OggOpus) for station [${stationKey}]: ${station.url}`);
 
     const ffmpegProcess = spawn(ffmpegExecutable, [
       '-reconnect', '1',
       '-reconnect_at_eof', '1',
       '-reconnect_streamed', '1',
       '-reconnect_delay_max', '5',
-      '-headers', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n',
+      '-user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       '-i', station.url,
-      '-f', 's16le',
+      '-c:a', 'libopus',
+      '-b:a', '96k',
       '-ar', '48000',
       '-ac', '2',
+      '-f', 'ogg',
       'pipe:1'
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -114,7 +116,7 @@ function playStation(stationKey) {
     });
 
     const resource = createAudioResource(ffmpegProcess.stdout, {
-      inputType: StreamType.Raw,
+      inputType: StreamType.OggOpus,
       metadata: {
         title: station.name,
         key: stationKey
