@@ -52,6 +52,7 @@ let currentStationKey = config.defaultStation || 'rahman';
 let currentChannelId = null;
 let reconnectTimer = null;
 let activeFfmpegProcess = null;
+let leaveTimer = null;
 
 const http = require('http');
 const PORT = process.env.PORT || 10000;
@@ -227,6 +228,9 @@ client.on(Events.ClientReady, () => {
 
 // Event: Voice State Updates (Auto-Join & Auto-Leave logic)
 client.on('voiceStateUpdate', async (oldState, newState) => {
+  // Ignore bot's own voice state updates to prevent state loop
+  if (newState.member?.user.bot) return;
+
   console.log(`[Voice State] Member ${newState.member?.user.tag} updated voice state. Old channel: ${oldState.channelId}, New channel: ${newState.channelId}`);
   if (!targetChannelId) return; // Skip auto-join if target channel is not configured
 
@@ -241,27 +245,44 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     const humanMembers = channel.members.filter(member => !member.user.bot).size;
     console.log(`[Voice State] Target channel check: ${channel.name} has ${humanMembers} human members.`);
 
-    // If humans join target channel and bot is not connected yet
-    if (humanMembers >= 1 && !currentConnection) {
-      console.log(`User joined target voice channel (${channel.name}). Auto-connecting bot...`);
-      try {
-        await connectToVoiceChannel(channel);
-        playStation(currentStationKey);
-      } catch (err) {
-        console.error('Failed to auto-connect to voice channel:', err);
+    // If humans join target channel
+    if (humanMembers >= 1) {
+      if (leaveTimer) {
+        clearTimeout(leaveTimer);
+        leaveTimer = null;
+        console.log('[Voice State] Member present in channel. Cancelled auto-disconnect timer.');
+      }
+
+      if (!currentConnection) {
+        console.log(`User joined target voice channel (${channel.name}). Auto-connecting bot...`);
+        try {
+          await connectToVoiceChannel(channel);
+          playStation(currentStationKey);
+        } catch (err) {
+          console.error('Failed to auto-connect to voice channel:', err);
+        }
       }
     } 
-    // If no humans left in channel
+    // If no humans left in channel, set 5-second grace timer before disconnecting
     else if (humanMembers === 0 && currentConnection && currentChannelId === targetChannelId) {
-      console.log(`Target voice channel (${channel.name}) is empty. Auto-disconnecting...`);
-      if (activeFfmpegProcess) {
-        try { activeFfmpegProcess.kill('SIGKILL'); } catch (e) {}
-        activeFfmpegProcess = null;
+      if (!leaveTimer) {
+        console.log(`[Voice State] Target channel (${channel.name}) is empty. Starting 5-second auto-disconnect timer...`);
+        leaveTimer = setTimeout(() => {
+          const recheckHumans = channel.members.filter(m => !m.user.bot).size;
+          if (recheckHumans === 0 && currentConnection) {
+            console.log(`[Voice State] Target channel (${channel.name}) still empty after grace period. Auto-disconnecting...`);
+            if (activeFfmpegProcess) {
+              try { activeFfmpegProcess.kill('SIGKILL'); } catch (e) {}
+              activeFfmpegProcess = null;
+            }
+            currentConnection.destroy();
+            currentConnection = null;
+            currentChannelId = null;
+            player.stop();
+          }
+          leaveTimer = null;
+        }, 5000);
       }
-      currentConnection.destroy();
-      currentConnection = null;
-      currentChannelId = null;
-      player.stop();
     }
   }
 });
