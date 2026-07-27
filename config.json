@@ -1,0 +1,60 @@
+{
+  "targetChannelId": "",
+  "defaultStation": "ilayaraja",
+  "stations": {
+    "rahman": {
+      "name": "A.R. Rahman Hits Radio",
+      "url": "https://psrlive2.listenon.in/arr?ah=0e81749e37789e5fb8c290926ce87e3f",
+      "genre": "Music / AR Rahman Special",
+      "description": "24/7 hits composed by Oscar-winner A.R. Rahman"
+    },
+    "ilayaraja": {
+      "name": "Ilayaraja Radio",
+      "url": "https://psrlive2.listenon.in/ir?ah=0e81749e37789e5fb8c290926ce87e3f",
+      "genre": "Music / Maestro Special",
+      "description": "Evergreen classic melodies by Maestro Ilayaraja"
+    },
+    "sooriyan": {
+      "name": "Sooriyan FM",
+      "url": "https://radio.lotustechnologieslk.net:8006/;stream.mp3",
+      "genre": "Pop & Entertainment",
+      "description": "Latest Tamil movie tracks & entertainment shows"
+    },
+    "rainbow": {
+      "name": "Chennai FM Rainbow",
+      "url": "https://air.pc.cdn.bitgravity.com/air/live/pbaudio022/playlist.m3u8",
+      "genre": "AIR / Chennai Rainbow FM",
+      "description": "All India Radio Chennai FM Rainbow live stream"
+    },
+    "kodai": {
+      "name": "AIR Kodai FM 100.5",
+      "url": "https://air.pc.cdn.bitgravity.com/air/live/pbaudio051/chunklist.m3u8",
+      "genre": "AIR / Kodaikanal FM",
+      "description": "Live broadcast from AIR Kodai FM 100.5 MHz"
+    },
+    "anirudh": {
+      "name": "Anirudh Radio",
+      "url": "https://psrlive2.listenon.in/anirud?ah=0e81749e37789e5fb8c290926ce87e3f",
+      "genre": "Music / Anirudh Special",
+      "description": "Non-stop energetic tracks by Anirudh Ravichander"
+    },
+    "radiocity": {
+      "name": "Radio City Live Tamil",
+      "url": "https://stream.zeno.fm/r4znzpvskchvv",
+      "genre": "FM Radio / Superhit Songs",
+      "description": "Radio City Tamil Live FM stream"
+    },
+    "american_tamil": {
+      "name": "American Tamil Radio",
+      "url": "https://cp11.serverse.com/proxy/hgsmgluv?mp=/stream",
+      "genre": "International / Tamil FM",
+      "description": "24/7 Tamil radio broadcasting from USA"
+    },
+    "madurai": {
+      "name": "AIR Madurai FM",
+      "url": "https://air.pc.cdn.bitgravity.com/air/live/pbaudio126/chunklist.m3u8",
+      "genre": "AIR / Madurai FM",
+      "description": "All India Radio Madurai 103.3 FM live"
+    }
+  }
+}
