@@ -16,6 +16,7 @@ const {
   entersState 
 } = require('@discordjs/voice');
 const ffmpeg = require('ffmpeg-static');
+const prism = require('prism-media');
 const { spawn } = require('child_process');
 const config = require('./config.json');
 require('dotenv').config();
@@ -73,56 +74,51 @@ function playStation(stationKey) {
     return false;
   }
 
-  // Kill previous FFmpeg process if active
+  // Destroy previous FFmpeg stream if active
   if (activeFfmpegProcess) {
     try {
-      activeFfmpegProcess.kill('SIGKILL');
+      if (typeof activeFfmpegProcess.destroy === 'function') {
+        activeFfmpegProcess.destroy();
+      } else {
+        activeFfmpegProcess.kill('SIGKILL');
+      }
     } catch (e) {}
     activeFfmpegProcess = null;
   }
 
   try {
-    // Spawn FFmpeg to transcode live HTTP stream directly to Ogg Opus audio
-    const ffmpegExecutable = ffmpeg || 'ffmpeg';
-    console.log(`[FFmpeg] Spawning ${ffmpegExecutable} (OggOpus) for station [${stationKey}]: ${station.url}`);
+    console.log(`[FFmpeg Prism] Streaming station [${stationKey}]: ${station.url}`);
 
-    const ffmpegProcess = spawn(ffmpegExecutable, [
-      '-reconnect', '1',
-      '-reconnect_at_eof', '1',
-      '-reconnect_streamed', '1',
-      '-reconnect_delay_max', '5',
-      '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      '-i', station.url,
-      '-c:a', 'libopus',
-      '-b:a', '96k',
-      '-ar', '48000',
-      '-ac', '2',
-      '-f', 'ogg',
-      'pipe:1'
-    ], { stdio: ['ignore', 'pipe', 'pipe'] });
-
-    activeFfmpegProcess = ffmpegProcess;
-
-    ffmpegProcess.stderr.on('data', data => {
-      console.log(`[FFmpeg Log]: ${data.toString().trim()}`);
+    const ffmpegStream = new prism.FFmpeg({
+      args: [
+        '-reconnect', '1',
+        '-reconnect_at_eof', '1',
+        '-reconnect_streamed', '1',
+        '-reconnect_delay_max', '5',
+        '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        '-i', station.url,
+        '-analyzeduration', '0',
+        '-loglevel', '0',
+        '-f', 's16le',
+        '-ar', '48000',
+        '-ac', '2'
+      ]
     });
 
-    ffmpegProcess.on('close', code => {
-      console.log(`[FFmpeg Process Exited]: Exit code ${code} for station [${stationKey}]`);
+    activeFfmpegProcess = ffmpegStream;
+
+    ffmpegStream.on('error', err => {
+      console.error(`[FFmpeg Prism Error] Station [${stationKey}]:`, err.message);
     });
 
-    ffmpegProcess.on('error', err => {
-      console.error(`FFmpeg process error for station [${stationKey}]:`, err.message);
-    });
-
-    const resource = createAudioResource(ffmpegProcess.stdout, {
-      inputType: StreamType.OggOpus,
+    const resource = createAudioResource(ffmpegStream, {
+      inputType: StreamType.Raw,
       metadata: {
         title: station.name,
         key: stationKey
       }
     });
-    
+
     player.play(resource);
     currentStationKey = stationKey;
     console.log(`Now streaming station: [${stationKey}] ${station.name} (${station.url})`);
