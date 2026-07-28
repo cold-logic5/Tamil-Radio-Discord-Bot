@@ -57,6 +57,7 @@ let currentChannelId = null;
 let reconnectTimer = null;
 let activeFfmpegProcess = null;
 let leaveTimer = null;
+let backgroundRetryTimer = null;
 
 const http = require('http');
 const PORT = process.env.PORT || 10000;
@@ -136,17 +137,19 @@ function playStation(stationKey) {
   }
 }
 
-// Helper: Join voice channel with retry logic for network stability
-async function connectToVoiceChannel(channel, retries = 3, delay = 2000) {
+// Helper: Join voice channel with exponential backoff for ECONNREFUSED resilience
+async function connectToVoiceChannel(channel, retries = 5, baseDelay = 5000) {
   if (currentConnection && currentChannelId === channel.id && currentConnection.state?.status === VoiceConnectionStatus.Ready) {
     return currentConnection;
   }
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
+      // Fully tear down any stale connection before each attempt
       if (currentConnection) {
         try { currentConnection.destroy(); } catch (e) {}
         currentConnection = null;
+        currentChannelId = null;
       }
 
       console.log(`[Voice Connection] Attempt ${attempt}/${retries} to connect to channel: ${channel.name} (${channel.id})`);
@@ -186,13 +189,13 @@ async function connectToVoiceChannel(channel, retries = 3, delay = 2000) {
       });
 
       console.log(`[Voice Connection] Waiting for connection to reach Ready state (attempt ${attempt})...`);
-      await entersState(currentConnection, VoiceConnectionStatus.Ready, 15_000);
+      await entersState(currentConnection, VoiceConnectionStatus.Ready, 20_000);
       console.log(`[Voice Connection] Connection successfully reached READY state on attempt ${attempt}!`);
       currentConnection.subscribe(player);
       return currentConnection;
 
     } catch (error) {
-      console.warn(`[Voice Connection Warning] Attempt ${attempt}/${retries} failed to reach Ready state: ${error.message || error}`);
+      console.warn(`[Voice Connection Warning] Attempt ${attempt}/${retries} failed: ${error.code || error.message || error}`);
       if (currentConnection) {
         try { currentConnection.destroy(); } catch (e) {}
         currentConnection = null;
@@ -200,14 +203,57 @@ async function connectToVoiceChannel(channel, retries = 3, delay = 2000) {
       }
 
       if (attempt < retries) {
-        console.log(`[Voice Connection] Retrying connection in ${delay / 1000}s...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        // Exponential backoff: 5s, 10s, 20s, 40s
+        const backoff = baseDelay * Math.pow(2, attempt - 1);
+        console.log(`[Voice Connection] Retrying in ${backoff / 1000}s (exponential backoff)...`);
+        await new Promise(resolve => setTimeout(resolve, backoff));
       } else {
         console.error(`[Voice Connection Error] All ${retries} connection attempts failed.`);
         throw error;
       }
     }
   }
+}
+
+// Helper: Background retry loop — keeps trying to connect while users are in the channel
+function scheduleBackgroundRetry(channel) {
+  // Clear any existing background retry
+  if (backgroundRetryTimer) {
+    clearTimeout(backgroundRetryTimer);
+    backgroundRetryTimer = null;
+  }
+
+  backgroundRetryTimer = setTimeout(async () => {
+    backgroundRetryTimer = null;
+
+    // Abort if bot is already connected
+    if (currentConnection && currentConnection.state?.status === VoiceConnectionStatus.Ready) {
+      console.log('[Background Retry] Bot is already connected, skipping retry.');
+      return;
+    }
+
+    // Abort if no humans are left in the target channel
+    const freshChannel = channel.guild.channels.cache.get(channel.id);
+    if (!freshChannel) return;
+    const humanMembers = freshChannel.members.filter(m => !m.user.bot).size;
+    if (humanMembers === 0) {
+      console.log('[Background Retry] No humans in channel anymore, stopping retry.');
+      return;
+    }
+
+    console.log(`[Background Retry] ${humanMembers} humans still in channel. Attempting connection...`);
+    try {
+      await connectToVoiceChannel(freshChannel);
+      playStation(currentStationKey);
+      console.log('[Background Retry] Successfully connected!');
+    } catch (err) {
+      console.error('[Background Retry] Connection attempt failed:', err.code || err.message);
+      // Schedule another background retry
+      scheduleBackgroundRetry(channel);
+    }
+  }, 15_000); // Wait 15 seconds before each background retry cycle
+
+  console.log('[Background Retry] Scheduled next connection attempt in 15s...');
 }
 
 // Player status monitoring
@@ -275,12 +321,22 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
           await connectToVoiceChannel(channel);
           playStation(currentStationKey);
         } catch (err) {
-          console.error('Failed to auto-connect to voice channel:', err);
+          console.error('Failed to auto-connect to voice channel:', err.code || err.message);
+          // All initial retries failed — schedule a background retry loop
+          // so the bot keeps trying while users are in the channel
+          scheduleBackgroundRetry(channel);
         }
       }
     } 
     // If no humans left in channel, set 5-second grace timer before disconnecting
     else if (humanMembers === 0 && currentConnection && currentChannelId === targetChannelId) {
+      // Cancel any background retry — no one to play for
+      if (backgroundRetryTimer) {
+        clearTimeout(backgroundRetryTimer);
+        backgroundRetryTimer = null;
+        console.log('[Voice State] Cancelled background retry — channel is empty.');
+      }
+
       if (!leaveTimer) {
         console.log(`[Voice State] Target channel (${channel.name}) is empty. Starting 5-second auto-disconnect timer...`);
         leaveTimer = setTimeout(() => {
@@ -368,6 +424,12 @@ client.on('interactionCreate', async interaction => {
 
     // /stop command
     if (commandName === 'stop') {
+      // Cancel any background retry
+      if (backgroundRetryTimer) {
+        clearTimeout(backgroundRetryTimer);
+        backgroundRetryTimer = null;
+      }
+
       if (!currentConnection) {
         return interaction.reply({ content: '⚠️ Bot is not currently in any voice channel.', flags: MessageFlags.Ephemeral });
       }
