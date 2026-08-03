@@ -79,6 +79,12 @@
       "url": "https://air.pc.cdn.bitgravity.com/air/live/pbaudio126/chunklist.m3u8",
       "genre": "AIR / Madurai FM",
       "description": "All India Radio Madurai 103.3 FM live"
+    },
+    "ilayamaan": {
+      "name": "Ilayamaan Radio",
+      "url": "https://psrlive3.listenon.in/ilayam?station=ilayamaanradio",
+      "genre": "Music / Maestro Special",
+      "description": "24/7 hits and classics from Ilayamaan Radio"
     }
   }
 }
